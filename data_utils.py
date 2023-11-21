@@ -2,6 +2,7 @@ import torch
 from collections import Counter
 import plotly.graph_objects as go
 import plotly.io as pio
+from torch import nn
 
 # Set the default renderer for Plotly
 pio.renderers.default = 'png'  # Change as needed for your environment

@@ -50,8 +50,6 @@ class MovieReviewDataset(Dataset):
         }
 
 
-from torch.utils.data import Dataset, DataLoader
-
 class MovieReviewDatasetB(Dataset):
     def __init__(self, reviews, targets, tokenizer, max_len):
         self.reviews = reviews
