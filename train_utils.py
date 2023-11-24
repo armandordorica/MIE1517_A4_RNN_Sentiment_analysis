@@ -6,18 +6,18 @@ from datetime import datetime, timedelta
 import pandas as pd
 import matplotlib.pyplot as plt
 
+import torch
+import torch.optim as optim
+from datetime import datetime, timedelta
+import time
 
-def train_model_rnn(model, train_loader, val_loader, epochs=5, learning_rate=0.001, weight_decay=1e-5, use_clipping=False, clip_value=1.0):
-    criterion = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-
+def train_model_rnn(model, criterion, optimizer, train_loader, val_loader, epochs):
+    start_time = time.time()
     train_losses, val_losses = [], []
     train_accuracies, val_accuracies = [], []
 
-    # Record the start time
-    start_time = time.time()
-
     for epoch in range(epochs):
+        # Training
         model.train()
         train_loss = 0.0
         for i, batch in enumerate(train_loader):
@@ -28,23 +28,15 @@ def train_model_rnn(model, train_loader, val_loader, epochs=5, learning_rate=0.0
             output, _ = model(inputs, model.init_hidden(inputs.size(0)))
             loss = criterion(output.squeeze(), labels.float())
             loss.backward()
-            if use_clipping:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), clip_value)
             optimizer.step()
             train_loss += loss.item()
 
-            # Progress update
             if (i + 1) % 100 == 0:
-                elapsed_time = time.time() - start_time
-                total_batches = epochs * len(train_loader)
-                completed_batches = epoch * len(train_loader) + i + 1
-                estimated_total_time = elapsed_time / completed_batches * total_batches
-                remaining_time = estimated_total_time - elapsed_time
                 print(f"Epoch {epoch+1}, Batch {i+1}/{len(train_loader)}, Current Batch Loss: {loss.item():.6f}")
-                print(f"Elapsed Time: {timedelta(seconds=int(elapsed_time))}, Estimated Time Remaining: {timedelta(seconds=int(remaining_time))}")
 
-        # Validation phase
-        val_loss, val_accuracy = 0.0, 0.0
+        # Validation
+        val_loss = 0.0
+        val_accuracy = get_accuracy_rnn(model, val_loader)
         model.eval()
         with torch.no_grad():
             for batch in val_loader:
@@ -54,21 +46,18 @@ def train_model_rnn(model, train_loader, val_loader, epochs=5, learning_rate=0.0
                 output, _ = model(inputs, model.init_hidden(inputs.size(0)))
                 loss = criterion(output.squeeze(), labels.float())
                 val_loss += loss.item()
-                preds = output.round().squeeze()
-                val_accuracy += torch.sum(preds == labels).item()
 
-        # Calculate average losses and accuracies
+        # Calculate average losses and store metrics
         train_losses.append(train_loss / len(train_loader))
         val_losses.append(val_loss / len(val_loader))
-        train_accuracies.append(get_accuracy(model, train_loader, is_rnn=True))
-        val_accuracies.append(val_accuracy / len(val_loader))
+        train_accuracies.append(get_accuracy_rnn(model, train_loader))
+        val_accuracies.append(val_accuracy)
 
         # Print epoch summary
         print(f'Epoch {epoch+1} Summary')
         print(f'\tTraining Loss: {train_losses[-1]:.6f} \tTraining Accuracy: {train_accuracies[-1]:.6f}')
         print(f'\tValidation Loss: {val_losses[-1]:.6f} \tValidation Accuracy: {val_accuracies[-1]:.6f}')
 
-    # Record the end time and calculate duration
     end_time = time.time()
     duration = str(timedelta(seconds=end_time - start_time))
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -81,6 +70,7 @@ def train_model_rnn(model, train_loader, val_loader, epochs=5, learning_rate=0.0
         'timestamp': timestamp,
         'duration': duration
     }
+
 
 
 def train_model(model, train_loader, val_loader, criterion_func, epochs=5, learning_rate=0.001, weight_decay=1e-5, use_clipping=False, clip_value=1.0):
@@ -167,6 +157,43 @@ def train_model(model, train_loader, val_loader, criterion_func, epochs=5, learn
         'timestamp': timestamp,
         'duration': formatted_duration
     }
+
+
+
+def get_accuracy_rnn(model, data):
+    """ Compute the accuracy of the `model` across a dataset `data` """
+    # Ensure model is in evaluation mode, which turns off dropout
+    model.eval()
+
+    # Variables to track total and correct predictions
+    correct = 0
+    total = 0
+
+    # Disable gradient calculations for efficiency
+    with torch.no_grad():
+        for batch in data:
+            # Get input data and labels
+            inputs, labels = batch['review'], batch['label']
+            
+            # Move data to the same device as the model
+            if torch.backends.mps.is_available():
+                inputs, labels = inputs.to("mps"), labels.to("mps")
+            elif torch.cuda.is_available():
+                inputs, labels = inputs.cuda(), labels.cuda()
+
+            # Forward pass to get outputs
+            outputs, _ = model(inputs, model.init_hidden(inputs.size(0)))
+
+            # Convert output probabilities to predicted class (0 or 1)
+            predicted = outputs.round()  # Assuming a sigmoid activation at the output
+
+            # Count total and correct predictions
+            total += labels.size(0)
+            correct += (predicted.squeeze() == labels).sum().item()
+
+    # Calculate accuracy
+    accuracy = correct / total
+    return accuracy
 
 
 def get_accuracy(model, data_loader, is_rnn=False):
